@@ -1,33 +1,42 @@
 import os
-import argparse
+import pandas as pd
 from compare import carregar_planilha, comparar
+from openpyxl import load_workbook
+
+def ajustar_largura_colunas(path_xlsx):
+    wb = load_workbook(path_xlsx)
+    ws = wb.active
+    for col in ws.columns:
+        max_len = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            val = "" if cell.value is None else str(cell.value)
+            max_len = max(max_len, len(val))
+        ws.column_dimensions[col_letter].width = max_len + 2
+    wb.save(path_xlsx)
+
+def load_data():
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data'))
+    # >>> ajuste os nomes dos arquivos aqui <<<
+    oficial_path  = os.path.join(base_dir, 'planilha_oficial.xlsx')      # a sua planilha oficial (relatório)
+    fisico_path   = os.path.join(base_dir, 'planilha_divergente.xlsx')   # contagem física
+    oficial = carregar_planilha(oficial_path)
+    fisico  = carregar_planilha(fisico_path)
+    return oficial, fisico
 
 def main():
-    # Verificar o diretório atual para garantir que o script está na pasta src/
-    print(f"Diretório atual: {os.getcwd()}")
+    oficial, fisico = load_data()
+    resultado = comparar(oficial, fisico)
 
-    # Caminhos absolutos para as planilhas em "C:/Users/55119/Documents/data"
-    planilha_oficial = "C:/Users/55119/Documents/data/planilha_oficial.xlsx"
-    planilha_divergente = "C:/Users/55119/Documents/data/planilha_divergente.xlsx"
+    out_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data'))
+    os.makedirs(out_dir, exist_ok=True)
+    out_xlsx = os.path.join(out_dir, 'relatorio_auditoria_comparacao.xlsx')
 
-    # Verificar se as planilhas existem antes de carregar
-    if not os.path.isfile(planilha_oficial):
-        print(f"Erro: A planilha oficial não foi encontrada em: {planilha_oficial}")
-        return
-    if not os.path.isfile(planilha_divergente):
-        print(f"Erro: A planilha divergente não foi encontrada em: {planilha_divergente}")
-        return
-    
-    # Carregar as planilhas usando os caminhos fornecidos
-    planilha_oficial = carregar_planilha(planilha_oficial)
-    planilha_divergente = carregar_planilha(planilha_divergente)
+    with pd.ExcelWriter(out_xlsx, engine='openpyxl', mode='w') as writer:
+        resultado.to_excel(writer, index=False, sheet_name='comparacao')
 
-    # Comparar as planilhas
-    resultado = comparar(planilha_oficial, planilha_divergente)
-
-    # Salvar o resultado da comparação
-    resultado.to_excel("C:/Users/55119/Documents/data/relatorio_auditoria_comparacao.xlsx", index=False)
-    print("Relatório gerado com sucesso: C:/Users/55119/Documents/data/relatorio_auditoria_comparacao.xlsx")
+    ajustar_largura_colunas(out_xlsx)
+    print(f"Relatório gerado: {out_xlsx}")
 
 if __name__ == "__main__":
     main()
