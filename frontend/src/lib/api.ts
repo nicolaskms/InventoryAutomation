@@ -8,6 +8,19 @@ const api = axios.create({
   timeout: 60000,
 });
 
+export async function postBlindTemplate(wms: File): Promise<Blob> {
+  const form = new FormData();
+  form.append("planilha_oficial", wms);
+
+  const res = await api.post("/blind-template", form, {
+    responseType: "blob",
+    headers: {
+      "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
+  });
+  return res.data as Blob;
+}
+
 export async function postCompare(wms: File, fisico: File): Promise<Blob> {
   const form = new FormData();
   form.append("planilha_oficial", wms);

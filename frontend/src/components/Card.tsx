@@ -3,11 +3,11 @@ interface Props {
   children: React.ReactNode;
 }
 
-export default function Card({ title, children }: Props) {
+export default function Card({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white shadow rounded p-4 mb-4">
-      <h2 className="font-bold mb-2">{title}</h2>
+    <section className="bg-white rounded-2xl shadow-sm border border-zinc-200 p-5">
+      {title && <h2 className="text-lg font-semibold mb-4">{title}</h2>}
       {children}
-    </div>
+    </section>
   );
 }

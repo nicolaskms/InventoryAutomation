@@ -8,7 +8,15 @@ Este projeto realiza a comparação entre duas planilhas de inventário: uma ofi
 - `src/`: Contém o código Python para realizar a comparação.
 - `requirements.txt`: Dependências do projeto.
 
-## Como Usar
+--------------------------------------------
+pip install -r requirements.txt
+--------------------------------------------
 
-1. Coloque suas planilhas na pasta `data/`.
-2. Execute o script `main.py` para gerar o relatório.
+## Para rodar o backend:
+- cd C:\Users\55119\Documents\InventoryAutomation\backend\src
+- python -m uvicorn server:app --reload --port 8000
+
+## Para rodar o frontend:
+- cd C:\Users\55119\Documents\InventoryAutomation\frontend\src
+- npm run dev
+- abra http://localhost:5173/

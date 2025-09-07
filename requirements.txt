@@ -1,5 +1,18 @@
-fastapi
-uvicorn[standard]
-pandas
-openpyxl
-python-multipart   # para upload de arquivos
+# === Backend - InventoryAutomation ===
+
+# Framework web
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+# Manipulação de dados
+pandas==2.2.3
+numpy==2.2.1
+
+# Excel
+openpyxl==3.1.5
+
+# Uploads multipart/form-data
+python-multipart==0.0.9
+
+# Watch de arquivos (para reload automático do uvicorn)
+watchfiles==0.24.0
