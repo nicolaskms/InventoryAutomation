@@ -1,33 +1,89 @@
-# === Python / Backend ===
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.sqlite3
-*.db
-.env
-venv/
-.env.*
-*.log
+*.py[cod]
+*$py.class
 
-# Arquivos temporários gerados
-*.xlsx
-*.xls
-data/*.xlsx
-data/*.xls
+# C extensions
+*.so
 
-# === Node / Frontend ===
-node_modules/
-dist/
+# Distribution / packaging
+.Python
 build/
-.vite/
-.npm/
+develop-eggs/
+dist/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+pip-wheel-metadata/
+share/python-wheels/
 
-# Arquivos de lock alternativos
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env/
 
-# === Sistema Operacional ===
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# macOS
 .DS_Store
+
+# Windows
 Thumbs.db
+ehthumbs.db
+
+# Logs and runtime files
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Python bytecode
+*.pyc
+
+# Generated Excel / data used at runtime (ignore backend generated files)
+backend/data/
+# If you prefer to keep the folder but ignore only .xlsx outputs:
+# backend/data/*.xlsx
+
+# Frontend (node / build)
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Misc
+*.swp

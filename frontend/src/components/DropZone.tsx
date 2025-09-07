@@ -1,84 +1,83 @@
-import React, { useCallback, useRef, useState, useMemo } from "react";
+import React, { useRef } from "react";
 
 type Props = {
-  label: string;
+  id?: string;
+  name?: string;
   accept?: string;
-  onFile: (file: File | null) => void;
-  height?: number;
+  multiple?: boolean;
+  onFiles?: (files: FileList) => void;
 };
 
-function slugify(s: string) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-}
-
-export default function DropZone({ label, accept = ".xlsx,.xls", onFile, height = 180 }: Props) {
-  const [isOver, setIsOver] = useState(false);
-  const [fileName, setFileName] = useState<string>("");
+export default function Dropzone({
+  id = "dropzone-file",
+  name = "file",
+  accept,
+  multiple = false,
+  onFiles,
+}: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const inputId = useMemo(() => `dz-${slugify(label)}`, [label]);
 
-  const handleFiles = useCallback((files: FileList | null) => {
-    const f = files?.[0] || null;
-    setFileName(f ? f.name : "");
-    onFile(f);
-  }, [onFile]);
-
-  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsOver(false);
-    handleFiles(e.dataTransfer.files);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && onFiles) onFiles(e.target.files);
   };
 
-  const openPicker = () => inputRef.current?.click();
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = (e.dataTransfer && e.dataTransfer.files) || null;
+    if (files && onFiles) onFiles(files);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const openFileDialog = () => {
+    inputRef.current?.click();
+  };
 
   return (
-    <div className="space-y-2">
-      <div className="text-sm font-medium">{label}</div>
+    <div
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      role="presentation"
+      style={{
+        border: "2px dashed #ccc",
+        padding: 20,
+        borderRadius: 8,
+        textAlign: "center",
+        cursor: "pointer",
+      }}
+      onClick={openFileDialog}
+    >
+      {/* Label visível ou escondido (visually-hidden) para leitores de tela */}
+      <label htmlFor={id} style={{ display: "block", marginBottom: 8 }}>
+        Selecionar arquivo ou arrastar aqui
+      </label>
 
-      <div
-        onDragOver={(e) => { e.preventDefault(); setIsOver(true); }}
-        onDragLeave={() => setIsOver(false)}
-        onDrop={onDrop}
-        // abre o seletor ao clicar no box
-        onClick={openPicker}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && openPicker()}
-        className={[
-          "flex items-center justify-center text-center rounded-xl border-2 border-dashed cursor-pointer select-none transition-colors shadow-sm",
-          isOver ? "border-yellow-500 bg-zinc-300" : "border-zinc-300 bg-zinc-200 hover:bg-zinc-300",
-          "text-zinc-700"
-        ].join(" ")}
-        style={{ height }}
-      >
-        <div className="px-6">
-          <div className="text-sm">
-            Arraste e solte aqui ou <span className="underline">clique para selecionar</span>
-          </div>
-          <div className="text-xs text-zinc-500 mt-1">Aceita: .xlsx, .xls</div>
-          {fileName && <div className="mt-3 text-sm font-semibold text-zinc-800">✔ {fileName}</div>}
-        </div>
-      </div>
-
+      {/* input file com id referente ao label e atributos de acessibilidade */}
       <input
         ref={inputRef}
-        id={inputId}
+        id={id}
+        name={name}
         type="file"
         accept={accept}
-        className="hidden"
-        onChange={(e) => handleFiles(e.target.files)}
+        multiple={multiple}
+        onChange={handleChange}
+        // Acessibilidade: title e aria-label asseguram que ferramentas que
+        // esperam esses atributos não reportem erro; o label acima é o ideal.
+        aria-label="Selecionar arquivo para upload"
+        title="Selecionar arquivo para upload"
+        style={{ display: "none" }}
       />
 
-      {fileName && (
-        <div className="flex gap-2">
-          <button
-            className="text-xs px-3 py-1 rounded-lg border border-zinc-300 hover:bg-zinc-50"
-            onClick={() => { setFileName(""); onFile(null); }}
-          >
-            Limpar
-          </button>
+      <div>
+        <strong>Arraste os arquivos aqui</strong>
+        <div style={{ fontSize: 13, color: "#666" }}>
+          ou clique para abrir o seletor de arquivos
         </div>
-      )}
+      </div>
     </div>
   );
 }
