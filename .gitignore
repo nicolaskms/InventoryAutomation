@@ -1,18 +1,33 @@
-# Ignorar o ambiente virtual
-venv/
-
-# Arquivos de compilação do Python
+# === Python / Backend ===
 __pycache__/
 *.pyc
 *.pyo
-
-# Arquivos temporários do sistema operacional
-Thumbs.db
+*.pyd
+*.sqlite3
+*.db
+.env
+venv/
+.env.*
 *.log
 
-# Arquivos e pastas do VSCode
-.vscode/
-*.code-workspace
+# Arquivos temporários gerados
+*.xlsx
+*.xls
+data/*.xlsx
+data/*.xls
 
-# Planilhas geradas (relatórios)
-data/relatorio_auditoria_comparacao.xlsx
+# === Node / Frontend ===
+node_modules/
+dist/
+build/
+.vite/
+.npm/
+
+# Arquivos de lock alternativos
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# === Sistema Operacional ===
+.DS_Store
+Thumbs.db
