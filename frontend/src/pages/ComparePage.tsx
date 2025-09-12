@@ -14,12 +14,11 @@ export default function ComparePage() {
     try {
       setLoading(true);
       const blob = await postCompare(wmsFile, fisicoFile);
-
       const ok = window.confirm("Relatório gerado com sucesso. Deseja baixar agora?");
-      if (!ok) return;
-
-      const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g, "-");
-      downloadBlob(blob, `relatorio_auditoria_comparacao-${ts}.xlsx`);
+      if (ok) {
+        const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g, "-");
+        downloadBlob(blob, `relatorio_auditoria_comparacao-${ts}.xlsx`);
+      }
     } catch (e) {
       alert("Falha ao gerar/baixar o relatório. Verifique o backend e tente novamente.");
       console.error(e);
@@ -32,8 +31,8 @@ export default function ComparePage() {
     <div className="space-y-6">
       <Card title="Comparar Planilhas (WMS x Físico)">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <DropZone label="Planilha oficial (WMS)" onFile={setWmsFile} />
-          <DropZone label="Planilha divergente (Físico)" onFile={setFisicoFile} />
+          <DropZone label="Planilha oficial (WMS)" file={wmsFile} onFile={setWmsFile} />
+          <DropZone label="Planilha divergente (Físico)" file={fisicoFile} onFile={setFisicoFile} />
         </div>
 
         <div className="mt-6">

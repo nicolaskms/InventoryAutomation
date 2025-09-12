@@ -25,7 +25,6 @@ export async function postCompare(wms: File, fisico: File): Promise<Blob> {
 
 export async function postBlindTemplate(file: File): Promise<Blob> {
   const form = new FormData();
-  // O backend que a branch frontend usa expõe /blind-template e espera 'planilha_oficial'
   form.append("planilha_oficial", file);
 
   const res = await api.post("/blind-template", form, {
@@ -39,9 +38,9 @@ export async function postBlindTemplate(file: File): Promise<Blob> {
 }
 
 export async function postBlank(wms: File): Promise<Blob> {
-  // Mantive também um helper para /blank caso você prefira usar esse endpoint.
   const form = new FormData();
   form.append("wms", wms);
+  
   const res = await api.post("/blank", form, {
     responseType: "blob",
     headers: {
@@ -62,3 +61,4 @@ export function downloadBlob(blob: Blob, filename: string) {
   a.remove();
   URL.revokeObjectURL(url);
 }
+

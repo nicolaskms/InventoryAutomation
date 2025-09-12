@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from io import BytesIO
 import os
+from blank import gerar_em_branco
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
@@ -14,11 +15,11 @@ import logging
 # IMPORTA suas funções já existentes do módulo compare.py
 from compare import carregar_planilha, comparar, _extrai_local
 
-# Importa a função gerar_em_branco caso exista em blank.py (opcional)
-try:
-    from blank import gerar_em_branco  # type: ignore
-except Exception:
-    gerar_em_branco = None  # pode não existir; /blank ficará disponível só se presente
+# # Importa a função gerar_em_branco caso exista em blank.py (opcional)
+# try:
+#     from blank import gerar_em_branco  # type: ignore
+# except Exception:
+#     gerar_em_branco = None  # pode não existir; /blank ficará disponível só se presente
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -193,20 +194,20 @@ async def blind_template(
 
 @app.post("/blank")
 async def blank_endpoint(request: Request):
-    if gerar_em_branco is None:
-        raise HTTPException(status_code=404, detail="Endpoint /blank não disponível (blank.gerar_em_branco ausente)")
-
     try:
-        wms = await _first_uploadfile_from_request(request)
+        wms = await _first_uploadfile_from_request(request)  # Recebe o arquivo WMS
         if not wms or not getattr(wms, "filename", None):
             raise HTTPException(status_code=400, detail="Arquivo inválido")
 
+        # Salva o arquivo WMS temporariamente
         wms_path = os.path.join(DATA_DIR, "wms_upload.xlsx")
         with open(wms_path, "wb") as f:
             f.write(await wms.read())
 
+        # Carrega o arquivo e gera a planilha em branco
         df_blank = gerar_em_branco(wms_path)
 
+        # Converte o DataFrame para bytes
         buf = _df_to_xlsx_bytes(df_blank, sheet_name="relatorio")
         buf = _auto_fit_and_center(buf, sheet_name="relatorio")
 

@@ -1,99 +1,79 @@
-import React, { useRef } from "react";
+import React, { useState } from "react";
+import Card from "../components/Card";
+import DropZone from "../components/DropZone";
+import { postBlindTemplate, downloadBlob } from "../lib/api";
 
-type Props = {
-  id?: string;
-  name?: string;
-  label?: string; // agora aceita label
-  accept?: string;
-  multiple?: boolean;
-  // onFile recebe um único File | null (compatível com setState se você encapsular)
-  onFile?: (file: File | null) => void;
-  // opcional: onFiles para compatibilidade com APIs que querem FileList
-  onFiles?: (files: FileList) => void;
-};
+export default function BlankReportPage() {
+  const [wmsFile, setWmsFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
 
-export default function Dropzone({
-  id = "dropzone-file",
-  name = "file",
-  label = "Selecionar arquivo ou arrastar aqui",
-  accept,
-  multiple = false,
-  onFile,
-  onFiles,
-}: Props) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const canSubmit = Boolean(wmsFile && !loading);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      // se onFiles estiver presente, chame com FileList
-      if (onFiles) onFiles(files);
-      // chame onFile com o primeiro arquivo
-      if (onFile) onFile(files[0]);
-    } else {
-      // sem arquivo: sinaliza null
-      if (onFile) onFile(null);
+  async function handleGenerate() {
+    if (!wmsFile) return;
+    try {
+      setLoading(true);
+      // Chama a API /blind-template
+      const blob = await postBlindTemplate(wmsFile);
+
+      if (confirm("Relatório em branco gerado. Deseja baixar agora?")) {
+        const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+        downloadBlob(blob, `relatorio_as_cegas-${ts}.xlsx`);
+      }
+    } catch (err: any) {
+      alert(`Falha ao gerar/baixar: ${err?.message || err}`);
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-  };
+  }
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const files = e.dataTransfer && e.dataTransfer.files;
-    if (files && files.length > 0) {
-      if (onFiles) onFiles(files);
-      if (onFile) onFile(files[0]);
-    } else {
-      if (onFile) onFile(null);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const openFileDialog = () => {
-    inputRef.current?.click();
+  // Função para limpar o arquivo
+  const handleClear = () => {
+    setWmsFile(null);  // Limpa o arquivo
   };
 
   return (
-    <div
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-      role="presentation"
-      style={{
-        border: "2px dashed #ccc",
-        padding: 20,
-        borderRadius: 8,
-        textAlign: "center",
-        cursor: "pointer",
-      }}
-      onClick={openFileDialog}
-    >
-      <label htmlFor={id} style={{ display: "block", marginBottom: 8 }}>
-        {label}
-      </label>
-
-      <input
-        ref={inputRef}
-        id={id}
-        name={name}
-        type="file"
-        accept={accept}
-        multiple={multiple}
-        onChange={handleChange}
-        aria-label={label}
-        title={label}
-        style={{ display: "none" }}
-      />
-
-      <div>
-        <strong>Arraste os arquivos aqui</strong>
-        <div style={{ fontSize: 13, color: "#666" }}>
-          ou clique para abrir o seletor de arquivos
+    <div className="space-y-6">
+      <Card title="Relatório às Cegas (a partir do WMS)">
+        <div className="max-w-xl">
+          <DropZone
+            label="Planilha oficial (WMS)"
+            file={wmsFile}        // Aqui, passando o estado `wmsFile` para o DropZone
+            onFile={setWmsFile}    // E aqui, definindo `setWmsFile` como função para atualizar o estado
+          />
         </div>
-      </div>
+
+        <div className="mt-6">
+          <button
+            disabled={!canSubmit}
+            onClick={handleGenerate}
+            className={[
+              "px-4 py-2 rounded-xl",
+              canSubmit
+                ? "bg-zinc-900 text-white hover:bg-zinc-800"
+                : "bg-zinc-200 text-zinc-500 cursor-not-allowed",
+            ].join(" ")}
+          >
+            {loading ? "Gerando..." : "Gerar Relatório em Branco"}
+          </button>
+          {!wmsFile && (
+            <span className="ml-3 text-sm text-zinc-500">
+              Envie a planilha WMS para habilitar.
+            </span>
+          )}
+        </div>
+
+        {/* Botão de limpar */}
+        {wmsFile && (
+          <button
+            className="mt-4 px-4 py-2 rounded-xl text-white bg-red-600 hover:bg-red-700"
+            onClick={handleClear}
+          >
+            Limpar Arquivo
+          </button>
+        )}
+      </Card>
     </div>
   );
 }
