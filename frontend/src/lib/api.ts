@@ -62,3 +62,27 @@ export function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+export async function postFormDraft(file: File): Promise<{
+  columns: string[];
+  ordered_gavetas: string[];
+  suggestions: Record<string, string[]>;
+  base_rows: any[];
+  total_rows: number;
+}> {
+  const form = new FormData();
+  form.append("planilha_oficial", file);
+  const res = await api.post("/form-draft", form, { responseType: "json" });
+  return res.data;
+}
+
+export async function postFormExport(payload: {
+  columns: string[];
+  rows: any[];
+  suggestions: Record<string, string[]>;
+}): Promise<Blob> {
+  const res = await api.post("/form-export", payload, {
+    responseType: "blob",
+    headers: { Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+  });
+  return res.data;
+}
