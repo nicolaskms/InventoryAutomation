@@ -1,0 +1,1 @@
+export { PlanilhaDigitacao } from "./PlanilhaDigitacao";

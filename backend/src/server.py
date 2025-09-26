@@ -15,11 +15,10 @@ import logging
 # IMPORTA suas funções já existentes do módulo compare.py
 from compare import carregar_planilha, comparar, _extrai_local
 
-# # Importa a função gerar_em_branco caso exista em blank.py (opcional)
-# try:
-#     from blank import gerar_em_branco  # type: ignore
-# except Exception:
-#     gerar_em_branco = None  # pode não existir; /blank ficará disponível só se presente
+try:
+    from blank import gerar_em_branco  # type: ignore
+except Exception:
+    gerar_em_branco = None
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -221,3 +220,38 @@ async def blank_endpoint(request: Request):
     except Exception as e:
         logger.exception("Error in /blank")
         raise HTTPException(status_code=400, detail=f"Erro ao processar planilha: {e}")
+    
+# Utiliza o módulo planilha_digitacao.py
+from planilha_digitacao import gerar_template_digitacao
+
+@app.post("/planilha-digitacao/preprocess")
+async def planilha_digitacao_preprocess(file: UploadFile = File(...)):
+    try:
+        content = await file.read()
+        df_template = gerar_template_digitacao(content)
+        preview = df_template.head(200).to_dict(orient="records")
+        return {
+            "columns": list(df_template.columns),
+            "preview": preview,
+            "totalRows": len(df_template)
+        }
+    except Exception as e:
+        logger.exception("Erro em /planilha-digitacao/preprocess")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/planilha-digitacao/export")
+async def planilha_digitacao_export(file: UploadFile = File(...)):
+    try:
+        content = await file.read()
+        df_template = gerar_template_digitacao(content)
+        buf = _df_to_xlsx_bytes(df_template, sheet_name="Digitacao")
+        buf = _auto_fit_and_center(buf, sheet_name="Digitacao")
+        filename = "planilha_digitacao.xlsx"
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'}
+        )
+    except Exception as e:
+        logger.exception("Erro em /planilha-digitacao/export")
+        raise HTTPException(status_code=400, detail=str(e))
