@@ -1,24 +1,28 @@
 # backend/src/server.py
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from io import BytesIO
 import os
+from blank import gerar_em_branco
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
+from openpyxl.workbook.defined_name import DefinedName
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 import re
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple, Optional, Any, Dict
 import logging
 
 # IMPORTA suas funções já existentes do módulo compare.py
 from compare import carregar_planilha, comparar, _extrai_local
 
-# Importa a função gerar_em_branco caso exista em blank.py (opcional)
-try:
-    from blank import gerar_em_branco  # type: ignore
-except Exception:
-    gerar_em_branco = None  # pode não existir; /blank ficará disponível só se presente
+# # Importa a função gerar_em_branco caso exista em blank.py (opcional)
+# try:
+#     from blank import gerar_em_branco  # type: ignore
+# except Exception:
+#     gerar_em_branco = None  # pode não existir; /blank ficará disponível só se presente
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -193,20 +197,20 @@ async def blind_template(
 
 @app.post("/blank")
 async def blank_endpoint(request: Request):
-    if gerar_em_branco is None:
-        raise HTTPException(status_code=404, detail="Endpoint /blank não disponível (blank.gerar_em_branco ausente)")
-
     try:
-        wms = await _first_uploadfile_from_request(request)
+        wms = await _first_uploadfile_from_request(request)  # Recebe o arquivo WMS
         if not wms or not getattr(wms, "filename", None):
             raise HTTPException(status_code=400, detail="Arquivo inválido")
 
+        # Salva o arquivo WMS temporariamente
         wms_path = os.path.join(DATA_DIR, "wms_upload.xlsx")
         with open(wms_path, "wb") as f:
             f.write(await wms.read())
 
+        # Carrega o arquivo e gera a planilha em branco
         df_blank = gerar_em_branco(wms_path)
 
+        # Converte o DataFrame para bytes
         buf = _df_to_xlsx_bytes(df_blank, sheet_name="relatorio")
         buf = _auto_fit_and_center(buf, sheet_name="relatorio")
 
@@ -220,3 +224,158 @@ async def blank_endpoint(request: Request):
     except Exception as e:
         logger.exception("Error in /blank")
         raise HTTPException(status_code=400, detail=f"Erro ao processar planilha: {e}")
+    
+def _ordenar_gavetas(gavetas: list[str]) -> list[str]:
+    """
+    Tenta aplicar a mesma lógica que já exista para ordenar locais/gavetas.
+    Se houver função oficial (ex: _extrai_local ou similar), adapte aqui.
+    Exemplo: ordenar por parte alfabética + número (M004 < M010 < M100 etc.).
+    """
+    import re
+    def key(g: str):
+        if g is None:
+            return ("", 0, g)
+        m = re.match(r"([A-Za-z]+)(\d+)", g)
+        if m:
+            return (m.group(1), int(m.group(2)), g)
+        return ("", 0, g)
+    return sorted(set([g for g in gavetas if g]), key=key)
+
+@app.post("/form-draft")
+async def form_draft(planilha_oficial: UploadFile = File(...)):
+    """
+    Recebe a planilha WMS e devolve metadados para montar o formulário de digitação:
+    - columns: ordem das colunas
+    - suggestions: dict de listas únicas para autocomplete
+    - base_rows: linhas base em branco (por gaveta) já estruturadas
+    - ordered_gavetas: lista ordenada só das gavetas
+    """
+    try:
+        if not planilha_oficial or not planilha_oficial.filename:
+            raise HTTPException(status_code=400, detail="Arquivo inválido")
+
+        temp_path = os.path.join(DATA_DIR, "form_draft_wms.xlsx")
+        with open(temp_path, "wb") as f:
+            f.write(await planilha_oficial.read())
+
+        df = carregar_planilha(temp_path)
+
+        # Garante colunas esperadas
+        expected = ["gaveta", "cod", "produto", "lote", "quantidade", "observacao"]
+        for col in expected:
+            if col not in df.columns:
+                # Cria vazia (observacao por ex.)
+                df[col] = "" if col in ("observacao", "quantidade") else ""
+
+        # Coleta valores únicos
+        def uniques(col):
+            return sorted([str(x) for x in df[col].dropna().unique() if str(x).strip() != ""])
+
+        suggestions = {
+            "gaveta": uniques("gaveta"),
+            "cod": uniques("cod"),
+            "produto": uniques("produto"),
+            "lote": uniques("lote"),
+        }
+
+        ordered_gavetas = _ordenar_gavetas(suggestions["gaveta"])
+
+        # Linhas base: uma linha por gaveta (ou pode replicar as linhas originais limpando campos)
+        base_rows = []
+        for g in ordered_gavetas:
+            base_rows.append({
+                "gaveta": g,
+                "cod": "",
+                "produto": "",
+                "lote": "",
+                "quantidade": "",
+                "observacao": ""
+            })
+
+        return {
+            "columns": expected,
+            "ordered_gavetas": ordered_gavetas,
+            "suggestions": suggestions,
+            "base_rows": base_rows,
+            "total_rows": len(base_rows)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar draft: {e}")
+
+@app.post("/form-export")
+async def form_export(payload: Dict[str, Any] = Body(...)):
+    from io import BytesIO
+    try:
+        columns = payload.get("columns")
+        rows = payload.get("rows")
+        suggestions = payload.get("suggestions", {})
+        if not columns or not rows:
+            raise HTTPException(status_code=400, detail="JSON inválido (columns/rows)")
+
+        from openpyxl import Workbook
+        from openpyxl.worksheet.datavalidation import DataValidation
+        from openpyxl.utils import get_column_letter
+        from openpyxl.styles import Alignment
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Formulario"
+
+        # Cabeçalho
+        for j, col in enumerate(columns, start=1):
+            c = ws.cell(row=1, column=j, value=col)
+            c.alignment = Alignment(horizontal="center", vertical="center")
+
+        # Linhas
+        for i, row in enumerate(rows, start=2):
+            for j, col in enumerate(columns, start=1):
+                ws.cell(row=i, column=j, value=row.get(col, ""))
+
+        # Aba listas (não oculta por enquanto para depurar)
+        hidden = wb.create_sheet("_listas")
+
+        # Cada lista em UMA coluna vertical
+        cols_ref = {}  # map colname -> (col_letter, size)
+        current_col = 1
+        for colname in ["gaveta", "cod", "produto", "lote"]:
+            vals = suggestions.get(colname, [])
+            if not vals:
+                continue
+            col_letter = get_column_letter(current_col)
+            for r_idx, val in enumerate(vals, start=1):
+                hidden.cell(row=r_idx, column=current_col, value=val)
+            cols_ref[colname] = (col_letter, len(vals))
+            current_col += 1
+
+        # Data Validation usando intervalo direto
+        max_lin = len(rows) + 100
+        for j, col in enumerate(columns, start=1):
+            if col in cols_ref:
+                col_letter_form, length = cols_ref[col]
+                if length > 0:
+                    col_letter = get_column_letter(j)
+                    formula_range = f"'_listas'!${col_letter_form}$1:${col_letter_form}${length}"
+                    dv = DataValidation(type="list", formula1=formula_range, allow_blank=True)
+                    dv.add(f"{col_letter}2:{col_letter}{max_lin}")
+                    ws.add_data_validation(dv)
+
+        # Ajuste largura
+        for j in range(1, len(columns)+1):
+            ws.column_dimensions[get_column_letter(j)].width = 18
+
+        bio = BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+        return StreamingResponse(
+            bio,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename=\"formulario_digitacao.xlsx\"'}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao exportar: {e}")

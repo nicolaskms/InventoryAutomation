@@ -7,7 +7,7 @@ export default function Sidebar() {
       <nav className="flex flex-col gap-3">
         <Link to="/" className="hover:font-semibold">Comparar Planilhas</Link>
         <Link to="/blank-report" className="hover:font-semibold">Relatório as Cegas</Link>
-        <Link to="/history" className="hover:font-semibold">Histórico</Link>
+        <Link to="/formulario-digitacao" className="hover:font-semibold">Formulário de Digitação</Link>
       </nav>
     </div>
   );
