@@ -1,8 +1,30 @@
 import React, { useState } from "react";
 import { postFormDraft, postFormExport, downloadBlob } from "../lib/api";
 import AutoCompleteCell from "../components/AutoCompleteCell";
+import DropZone from "../components/DropZone";
 
 type Row = Record<string, string>;
+
+function extrairRuas(rows: Row[]): string[] {
+  const ruasSet = new Set<string>();
+  rows.forEach((linha) => {
+    const posicao = linha["gaveta"] || linha["Posicao"];
+    if (posicao && posicao.length >= 1) {
+      const rua = posicao.trim()[0].toUpperCase();
+      ruasSet.add(rua);
+    }
+  });
+  return Array.from(ruasSet).sort();
+}
+
+function filtrarPorRua(rows: Row[], rua: string): Row[] {
+  if (rua === "Todas") return rows;
+  return rows.filter((linha) => {
+    const posicao = linha["gaveta"] || linha["Posicao"];
+    if (!posicao) return false;
+    return posicao.trim().toUpperCase().startsWith(rua.toUpperCase());
+  });
+}
 
 export default function FormularioDigitacaoPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -12,6 +34,11 @@ export default function FormularioDigitacaoPage() {
   const [suggestions, setSuggestions] = useState<Record<string, string[]>>({});
   const [orderedGavetas, setOrderedGavetas] = useState<string[]>([]);
   const [draftLoaded, setDraftLoaded] = useState(false);
+
+  // Novos estados para filtro de rua
+  const [ruas, setRuas] = useState<string[]>([]);
+  const [ruaSelecionada, setRuaSelecionada] = useState<string>("Todas");
+  const [rowsFiltrados, setRowsFiltrados] = useState<Row[]>([]);
 
   async function handleGenerate() {
     if (!file) return;
@@ -23,6 +50,11 @@ export default function FormularioDigitacaoPage() {
       setSuggestions(data.suggestions);
       setOrderedGavetas(data.ordered_gavetas);
       setDraftLoaded(true);
+      // Extrai ruas da planilha
+      const extraidas = extrairRuas(data.base_rows);
+      setRuas(["Todas", ...extraidas]);
+      setRuaSelecionada("Todas");
+      setRowsFiltrados(data.base_rows);
     } catch (e) {
       alert("Falha ao gerar draft");
       console.error(e);
@@ -31,27 +63,38 @@ export default function FormularioDigitacaoPage() {
     }
   }
 
-  function updateCell(rowIndex: number, col: string, value: string) {
-    setRows(r => {
-      const clone = [...r];
-      clone[rowIndex] = { ...clone[rowIndex], [col]: value };
-      return clone;
-    });
+  function updateCell(rowIndexFiltrado: number, col: string, value: string) {
+  setRows(r => {
+    const linhaFiltrada = rowsFiltrados[rowIndexFiltrado];
+    const idxReal = r.findIndex(linha =>
+      linha["gaveta"] === linhaFiltrada["gaveta"] &&
+      linha["Posicao"] === linhaFiltrada["Posicao"]
+    );
+    if (idxReal === -1) return r;
+
+    const clone = [...r];
+    clone[idxReal] = { ...clone[idxReal], [col]: value };
+    setRowsFiltrados(filtrarPorRua(clone, ruaSelecionada));
+    return clone;
+  });
   }
 
   function addEmptyRow() {
     const obj: Row = {};
     columns.forEach(c => {
-      if (c === "gaveta") obj[c] = ""; else obj[c] = "";
+      obj[c] = "";
     });
-    setRows(r => [...r, obj]);
+    const newRows = [...rows, obj];
+    setRows(newRows);
+    setRowsFiltrados(filtrarPorRua(newRows, ruaSelecionada));
   }
 
+  // ALTERAÇÃO: Exporta apenas as linhas filtradas!
   async function handleExport() {
     try {
       const blob = await postFormExport({
         columns,
-        rows,
+        rows: rowsFiltrados, // << só exporta as linhas mostradas/filtros!
         suggestions
       });
       const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
@@ -62,18 +105,23 @@ export default function FormularioDigitacaoPage() {
     }
   }
 
+  function handleRuaChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const rua = e.target.value;
+    setRuaSelecionada(rua);
+    setRowsFiltrados(filtrarPorRua(rows, rua));
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold">Formulário de Digitação</h1>
 
       <div className="border p-4 rounded space-y-4">
-        <div>
-          <input
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-          />
-        </div>
+        <DropZone
+          label="Arraste ou solte uma planilha para gerar o formulário:"
+          accept=".xlsx,.xls"
+          file={file}
+          onFile={setFile}
+        />
         <button
           disabled={!file || loading}
             onClick={handleGenerate}
@@ -99,48 +147,41 @@ export default function FormularioDigitacaoPage() {
               Exportar XLSX
             </button>
           </div>
-          <div className="overflow-auto border rounded">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-100">
+          <div>
+            <label className="mr-2">Escolha a rua:</label>
+            <select value={ruaSelecionada} onChange={handleRuaChange} className="border rounded px-2 py-1">
+              {ruas.map((rua) => (
+                <option key={rua} value={rua}>{rua}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            {/* Renderização dos dados filtrados */}
+            <table className="min-w-full border">
+              <thead>
                 <tr>
-                  {columns.map(c => (
-                    <th key={c} className="px-2 py-2 border text-left">{c}</th>
+                  {columns.map(col => (
+                    <th key={col} className="border px-2 py-1">{col}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, rIdx) => (
-                  <tr key={rIdx} className="odd:bg-white even:bg-gray-50">
-                    {columns.map(col => {
-                      const isAuto = ["gaveta","cod","produto","lote"].includes(col);
-                      return (
-                        <td key={col} className="border px-2 py-1 align-top">
-                          {isAuto ? (
-                            <AutoCompleteCell
-                              value={row[col] || ""}
-                              suggestions={suggestions[col] || []}
-                              onChange={(v) => updateCell(rIdx, col, v)}
-                              placeholder={col}
-                            />
-                          ) : (
-                            <input
-                              value={row[col] || ""}
-                              onChange={(e) => updateCell(rIdx, col, e.target.value)}
-                              className="w-full px-2 py-1 border rounded"
-                              placeholder={col}
-                            />
-                          )}
-                        </td>
-                      );
-                    })}
+                {rowsFiltrados.map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {columns.map(col => (
+                      <td key={col} className="border px-2 py-1">
+                        <AutoCompleteCell
+                          value={row[col] ?? ""}
+                          suggestions={suggestions[col] ?? []}
+                          onChange={v => updateCell(rowIndex, col, v)}
+                        />
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-gray-500">
-            Total de linhas: {rows.length} | Gavetas detectadas: {orderedGavetas.length}
-          </p>
         </div>
       )}
     </div>
