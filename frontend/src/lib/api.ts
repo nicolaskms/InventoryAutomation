@@ -62,13 +62,16 @@ export function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function postFormDraft(file: File): Promise<{
+export interface FormDraftResponse {
   columns: string[];
   ordered_gavetas: string[];
   suggestions: Record<string, string[]>;
   base_rows: any[];
   total_rows: number;
-}> {
+  cod_prod_map: Record<string, string[]>;
+}
+
+export async function postFormDraft(file: File): Promise<FormDraftResponse> {
   const form = new FormData();
   form.append("planilha_oficial", file);
   const res = await api.post("/form-draft", form, { responseType: "json" });

@@ -247,8 +247,9 @@ async def form_draft(planilha_oficial: UploadFile = File(...)):
     Recebe a planilha WMS e devolve metadados para montar o formulário de digitação:
     - columns: ordem das colunas
     - suggestions: dict de listas únicas para autocomplete
-    - base_rows: linhas base em branco (por gaveta) já estruturadas
-    - ordered_gavetas: lista ordenada só das gavetas
+    - base_rows: linhas base em branco (por gaveta)
+    - ordered_gavetas: lista ordenada das gavetas
+    - cod_prod_map: (NOVO) dict código -> lista de produtos possíveis
     """
     try:
         if not planilha_oficial or not planilha_oficial.filename:
@@ -264,12 +265,15 @@ async def form_draft(planilha_oficial: UploadFile = File(...)):
         expected = ["gaveta", "cod", "produto", "lote", "quantidade", "observacao"]
         for col in expected:
             if col not in df.columns:
-                # Cria vazia (observacao por ex.)
-                df[col] = "" if col in ("observacao", "quantidade") else ""
+                df[col] = ""
 
-        # Coleta valores únicos
-        def uniques(col):
-            return sorted([str(x) for x in df[col].dropna().unique() if str(x).strip() != ""])
+        # Função util para valores únicos limpos
+        def uniques(col: str):
+            return sorted([
+                str(x).strip()
+                for x in df[col].dropna().unique()
+                if str(x).strip() != ""
+            ])
 
         suggestions = {
             "gaveta": uniques("gaveta"),
@@ -280,7 +284,25 @@ async def form_draft(planilha_oficial: UploadFile = File(...)):
 
         ordered_gavetas = _ordenar_gavetas(suggestions["gaveta"])
 
-        # Linhas base: uma linha por gaveta (ou pode replicar as linhas originais limpando campos)
+        # NOVO: construir mapa código -> lista de produtos
+        cod_prod_map: dict[str, list[str]] = {}
+        if "cod" in df.columns and "produto" in df.columns:
+            temp = (
+                df[["cod", "produto"]]
+                .dropna()
+                .astype(str)
+                .applymap(lambda v: v.strip())
+                .drop_duplicates()
+            )
+            for _, row in temp.iterrows():
+                c = row["cod"]
+                p = row["produto"]
+                if c:
+                    cod_prod_map.setdefault(c, set()).add(p)
+        # Converte sets para listas ordenadas
+        cod_prod_map = {c: sorted(list(ps)) for c, ps in cod_prod_map.items()}
+
+        # Linhas base: uma por gaveta
         base_rows = []
         for g in ordered_gavetas:
             base_rows.append({
@@ -297,7 +319,8 @@ async def form_draft(planilha_oficial: UploadFile = File(...)):
             "ordered_gavetas": ordered_gavetas,
             "suggestions": suggestions,
             "base_rows": base_rows,
-            "total_rows": len(base_rows)
+            "total_rows": len(base_rows),
+            "cod_prod_map": cod_prod_map   # <-- NOVO
         }
     except HTTPException:
         raise

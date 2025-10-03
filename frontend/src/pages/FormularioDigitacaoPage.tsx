@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { postFormDraft, postFormExport, downloadBlob } from "../lib/api";
+import { postFormDraft, postFormExport, downloadBlob, FormDraftResponse } from "../lib/api";
 import AutoCompleteCell from "../components/AutoCompleteCell";
 import DropZone from "../components/DropZone";
 
@@ -35,22 +35,27 @@ export default function FormularioDigitacaoPage() {
   const [orderedGavetas, setOrderedGavetas] = useState<string[]>([]);
   const [draftLoaded, setDraftLoaded] = useState(false);
 
-  // Novos estados para filtro de rua
+  // Filtro por rua
   const [ruas, setRuas] = useState<string[]>([]);
   const [ruaSelecionada, setRuaSelecionada] = useState<string>("Todas");
   const [rowsFiltrados, setRowsFiltrados] = useState<Row[]>([]);
+
+  // NOVO: mapa código -> produtos
+  const [codProdMap, setCodProdMap] = useState<Record<string, string[]>>({});
 
   async function handleGenerate() {
     if (!file) return;
     setLoading(true);
     try {
-      const data = await postFormDraft(file);
+      const data: FormDraftResponse = await postFormDraft(file);
       setColumns(data.columns);
       setRows(data.base_rows);
       setSuggestions(data.suggestions);
       setOrderedGavetas(data.ordered_gavetas);
       setDraftLoaded(true);
-      // Extrai ruas da planilha
+
+      setCodProdMap(data.cod_prod_map || {}); // NOVO
+
       const extraidas = extrairRuas(data.base_rows);
       setRuas(["Todas", ...extraidas]);
       setRuaSelecionada("Todas");
@@ -64,37 +69,51 @@ export default function FormularioDigitacaoPage() {
   }
 
   function updateCell(rowIndexFiltrado: number, col: string, value: string) {
-  setRows(r => {
-    const linhaFiltrada = rowsFiltrados[rowIndexFiltrado];
-    const idxReal = r.findIndex(linha =>
-      linha["gaveta"] === linhaFiltrada["gaveta"] &&
-      linha["Posicao"] === linhaFiltrada["Posicao"]
-    );
-    if (idxReal === -1) return r;
+    setRows(prevAll => {
+      const linhaFiltrada = rowsFiltrados[rowIndexFiltrado];
+      const idxReal = prevAll.findIndex(linha =>
+        linha["gaveta"] === linhaFiltrada["gaveta"] &&
+        linha["Posicao"] === linhaFiltrada["Posicao"]
+      );
+      if (idxReal === -1) return prevAll;
 
-    const clone = [...r];
-    clone[idxReal] = { ...clone[idxReal], [col]: value };
-    setRowsFiltrados(filtrarPorRua(clone, ruaSelecionada));
-    return clone;
-  });
+      const clone = [...prevAll];
+      const updated = { ...clone[idxReal], [col]: value };
+
+      if (col === "cod") {
+        const codeKey = value.trim();
+        const prods = codProdMap[codeKey];
+        if (prods && prods.length === 1) {
+          updated["produto"] = prods[0];
+        } else if (prods && prods.length > 1) {
+          if (!updated["produto"] || !prods.includes(updated["produto"])) {
+            updated["produto"] = prods[0];
+          }
+        } else {
+            // Código não encontrado
+            if (updated["produto"]) updated["produto"] = "";
+        }
+      }
+
+      clone[idxReal] = updated;
+      setRowsFiltrados(filtrarPorRua(clone, ruaSelecionada));
+      return clone;
+    });
   }
 
   function addEmptyRow() {
     const obj: Row = {};
-    columns.forEach(c => {
-      obj[c] = "";
-    });
+    columns.forEach(c => { obj[c] = ""; });
     const newRows = [...rows, obj];
     setRows(newRows);
     setRowsFiltrados(filtrarPorRua(newRows, ruaSelecionada));
   }
 
-  // ALTERAÇÃO: Exporta apenas as linhas filtradas!
   async function handleExport() {
     try {
       const blob = await postFormExport({
         columns,
-        rows: rowsFiltrados, // << só exporta as linhas mostradas/filtros!
+        rows: rowsFiltrados, // Mantido conforme implementação da sua branch
         suggestions
       });
       const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
@@ -124,8 +143,8 @@ export default function FormularioDigitacaoPage() {
         />
         <button
           disabled={!file || loading}
-            onClick={handleGenerate}
-            className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+          onClick={handleGenerate}
+          className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
         >
           {loading ? "Processando..." : "Gerar Formulário"}
         </button>
@@ -156,7 +175,6 @@ export default function FormularioDigitacaoPage() {
             </select>
           </div>
           <div>
-            {/* Renderização dos dados filtrados */}
             <table className="min-w-full border">
               <thead>
                 <tr>
@@ -182,6 +200,9 @@ export default function FormularioDigitacaoPage() {
               </tbody>
             </table>
           </div>
+          <p className="text-xs text-gray-500">
+            Linhas exibidas: {rowsFiltrados.length} / Total base: {rows.length}
+          </p>
         </div>
       )}
     </div>
