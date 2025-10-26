@@ -5,25 +5,75 @@ import DropZone from "../components/DropZone";
 
 type Row = Record<string, string>;
 
-function extrairRuas(rows: Row[]): string[] {
-  const ruasSet = new Set<string>();
-  rows.forEach((linha) => {
-    const posicao = linha["gaveta"] || linha["Posicao"];
-    if (posicao && posicao.length >= 1) {
-      const rua = posicao.trim()[0].toUpperCase();
-      ruasSet.add(rua);
+/**
+ * Extrai letras (ruas) a partir da primeira letra das posições/gavetas.
+ * Para cada letra gera também variantes PAR e IMPAR (ex.: A, APAR, AIMPAR).
+ */
+function montarOpcoesRuas(rows: Row[]): string[] {
+  const letras = new Set<string>();
+  rows.forEach(linha => {
+    const pos = (linha["gaveta"] || linha["Posicao"] || "").trim();
+    if (!pos) return;
+    const first = pos[0].toUpperCase();
+    if (/[A-Z]/.test(first)) {
+      letras.add(first);
     }
   });
-  return Array.from(ruasSet).sort();
+  const ordenadas = Array.from(letras).sort();
+  const opcoes: string[] = ["Todas"];
+  for (const letra of ordenadas) {
+    opcoes.push(letra);          // todas daquela letra
+    opcoes.push(letra + "PAR");  // apenas pares
+    opcoes.push(letra + "IMPAR");// apenas ímpares
+  }
+  return opcoes;
 }
 
-function filtrarPorRua(rows: Row[], rua: string): Row[] {
-  if (rua === "Todas") return rows;
-  return rows.filter((linha) => {
-    const posicao = linha["gaveta"] || linha["Posicao"];
-    if (!posicao) return false;
-    return posicao.trim().toUpperCase().startsWith(rua.toUpperCase());
-  });
+/**
+ * Tenta extrair (letra, numero) de uma posição.
+ * Ex: B12A -> { letra: 'B', numero: 12 }
+ * Se não encontrar número, retorna undefined para numero.
+ */
+function parsePosicao(posicaoRaw: string): { letra: string; numero?: number } | null {
+  const pos = (posicaoRaw || "").trim().toUpperCase();
+  if (!pos) return null;
+  const m = /^([A-Z])(\d+)/.exec(pos);
+  if (m) {
+    return { letra: m[1], numero: parseInt(m[2], 10) };
+  }
+  // Ainda capturamos somente a letra inicial caso não tenha número
+  if (/^[A-Z]/.test(pos)) {
+    return { letra: pos[0] };
+  }
+  return null;
+}
+
+function filtrarPorOpcao(rows: Row[], opcao: string): Row[] {
+  if (opcao === "Todas") return rows;
+
+  // Letra pura (ex.: A, B, C)
+  if (/^[A-Z]$/.test(opcao)) {
+    return rows.filter(l => {
+      const p = parsePosicao(l["gaveta"] || l["Posicao"] || "");
+      return p && p.letra === opcao;
+    });
+  }
+
+  // Padrões APAR / AIMPAR, etc.
+  const m = /^([A-Z])(PAR|IMPAR)$/.exec(opcao);
+  if (m) {
+    const letraFiltro = m[1];
+    const tipo = m[2]; // PAR ou IMPAR
+    return rows.filter(l => {
+      const p = parsePosicao(l["gaveta"] || l["Posicao"] || "");
+      if (!p || p.letra !== letraFiltro || p.numero === undefined) return false;
+      if (tipo === "PAR") return p.numero % 2 === 0;
+      return p.numero % 2 === 1;
+    });
+  }
+
+  // Fallback (caso algo inesperado)
+  return rows;
 }
 
 export default function FormularioDigitacaoPage() {
@@ -35,12 +85,12 @@ export default function FormularioDigitacaoPage() {
   const [orderedGavetas, setOrderedGavetas] = useState<string[]>([]);
   const [draftLoaded, setDraftLoaded] = useState(false);
 
-  // Filtro por rua
-  const [ruas, setRuas] = useState<string[]>([]);
-  const [ruaSelecionada, setRuaSelecionada] = useState<string>("Todas");
+  // Filtro por rua/opção
+  const [opcoesRua, setOpcoesRua] = useState<string[]>([]);
+  const [opcaoSelecionada, setOpcaoSelecionada] = useState<string>("Todas");
   const [rowsFiltrados, setRowsFiltrados] = useState<Row[]>([]);
 
-  // NOVO: mapa código -> produtos
+  // Mapa código -> produtos
   const [codProdMap, setCodProdMap] = useState<Record<string, string[]>>({});
 
   async function handleGenerate() {
@@ -53,12 +103,11 @@ export default function FormularioDigitacaoPage() {
       setSuggestions(data.suggestions);
       setOrderedGavetas(data.ordered_gavetas);
       setDraftLoaded(true);
+      setCodProdMap(data.cod_prod_map || {});
 
-      setCodProdMap(data.cod_prod_map || {}); // NOVO
-
-      const extraidas = extrairRuas(data.base_rows);
-      setRuas(["Todas", ...extraidas]);
-      setRuaSelecionada("Todas");
+      const opcoes = montarOpcoesRuas(data.base_rows);
+      setOpcoesRua(opcoes);
+      setOpcaoSelecionada("Todas");
       setRowsFiltrados(data.base_rows);
     } catch (e) {
       alert("Falha ao gerar draft");
@@ -68,9 +117,14 @@ export default function FormularioDigitacaoPage() {
     }
   }
 
+  /**
+   * Atualiza célula (usando rowsFiltrados -> encontra índice real em rows).
+   * Mantém lógica de autofill do produto baseado no código.
+   */
   function updateCell(rowIndexFiltrado: number, col: string, value: string) {
     setRows(prevAll => {
       const linhaFiltrada = rowsFiltrados[rowIndexFiltrado];
+      // Critério para achar a linha original:
       const idxReal = prevAll.findIndex(linha =>
         linha["gaveta"] === linhaFiltrada["gaveta"] &&
         linha["Posicao"] === linhaFiltrada["Posicao"]
@@ -90,13 +144,12 @@ export default function FormularioDigitacaoPage() {
             updated["produto"] = prods[0];
           }
         } else {
-            // Código não encontrado
-            if (updated["produto"]) updated["produto"] = "";
+          if (updated["produto"]) updated["produto"] = "";
         }
       }
 
       clone[idxReal] = updated;
-      setRowsFiltrados(filtrarPorRua(clone, ruaSelecionada));
+      setRowsFiltrados(filtrarPorOpcao(clone, opcaoSelecionada));
       return clone;
     });
   }
@@ -106,14 +159,14 @@ export default function FormularioDigitacaoPage() {
     columns.forEach(c => { obj[c] = ""; });
     const newRows = [...rows, obj];
     setRows(newRows);
-    setRowsFiltrados(filtrarPorRua(newRows, ruaSelecionada));
+    setRowsFiltrados(filtrarPorOpcao(newRows, opcaoSelecionada));
   }
 
   async function handleExport() {
     try {
       const blob = await postFormExport({
         columns,
-        rows: rowsFiltrados, // Mantido conforme implementação da sua branch
+        rows: rowsFiltrados,
         suggestions
       });
       const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
@@ -124,10 +177,10 @@ export default function FormularioDigitacaoPage() {
     }
   }
 
-  function handleRuaChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const rua = e.target.value;
-    setRuaSelecionada(rua);
-    setRowsFiltrados(filtrarPorRua(rows, rua));
+  function handleOpcaoRuaChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const opc = e.target.value;
+    setOpcaoSelecionada(opc);
+    setRowsFiltrados(filtrarPorOpcao(rows, opc));
   }
 
   return (
@@ -152,7 +205,7 @@ export default function FormularioDigitacaoPage() {
 
       {draftLoaded && (
         <div className="space-y-4">
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={addEmptyRow}
               className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm"
@@ -165,36 +218,54 @@ export default function FormularioDigitacaoPage() {
             >
               Exportar XLSX
             </button>
+            <div className="flex items-center gap-2">
+              <label className="text-sm">Filtro:</label>
+              <select
+                value={opcaoSelecionada}
+                onChange={handleOpcaoRuaChange}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                {opcoesRua.map(op => (
+                  <option key={op} value={op}>{op}</option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div>
-            <label className="mr-2">Escolha a rua:</label>
-            <select value={ruaSelecionada} onChange={handleRuaChange} className="border rounded px-2 py-1">
-              {ruas.map((rua) => (
-                <option key={rua} value={rua}>{rua}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <table className="min-w-full border">
-              <thead>
+
+          <div className="overflow-auto border rounded">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-100">
                 <tr>
-                  {columns.map(col => (
-                    <th key={col} className="border px-2 py-1">{col}</th>
+                  {columns.map(c => (
+                    <th key={c} className="px-2 py-2 border text-left">{c}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {rowsFiltrados.map((row, rowIndex) => (
-                  <tr key={rowIndex}>
-                    {columns.map(col => (
-                      <td key={col} className="border px-2 py-1">
-                        <AutoCompleteCell
-                          value={row[col] ?? ""}
-                          suggestions={suggestions[col] ?? []}
-                          onChange={v => updateCell(rowIndex, col, v)}
-                        />
-                      </td>
-                    ))}
+                {rowsFiltrados.map((row, rIdx) => (
+                  <tr key={rIdx} className="odd:bg-white even:bg-gray-50">
+                    {columns.map(col => {
+                      const isAuto = ["gaveta","cod","produto","lote"].includes(col);
+                      return (
+                        <td key={col} className="border px-2 py-1 align-top">
+                          {isAuto ? (
+                            <AutoCompleteCell
+                              value={row[col] || ""}
+                              suggestions={suggestions[col] || []}
+                              onChange={(v) => updateCell(rIdx, col, v)}
+                              placeholder={col}
+                            />
+                          ) : (
+                            <input
+                              value={row[col] || ""}
+                              onChange={(e) => updateCell(rIdx, col, e.target.value)}
+                              className="w-full px-2 py-1 border rounded"
+                              placeholder={col}
+                            />
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
